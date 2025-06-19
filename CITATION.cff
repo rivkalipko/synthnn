@@ -1,0 +1,9 @@
+cff-version: 1.0
+message: "If you use this software in your research, please cite it as below."
+authors:
+- family-names: "Lipkovitz"
+  given-names: "Rivka"
+  orcid: "https://orcid.org/0000-0002-0273-664X"
+title: "synthnn: a Python package for estimating treatment effects using Synthetic Nearest Neighbors"
+date-released: 2025-06-19
+url: "https://github.com/rlipko/synthnn"

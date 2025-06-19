@@ -1,0 +1,10 @@
+LICENSE
+README.md
+pyproject.toml
+src/synthnn/__init__.py
+src/synthnn/base.py
+src/synthnn.egg-info/PKG-INFO
+src/synthnn.egg-info/SOURCES.txt
+src/synthnn.egg-info/dependency_links.txt
+src/synthnn.egg-info/requires.txt
+src/synthnn.egg-info/top_level.txt
