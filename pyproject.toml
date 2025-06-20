@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "synthnn"
-version = "1.0"
+version = "1.1.1"
 authors = [
   { name="Rivka Lipkovitz", email="rivkal@mit.edu" },
 ]
@@ -35,5 +35,5 @@ dependencies = [
 
 [project.urls]
 
-Homepage = "https://github.com/rlipko/synthnn"
-"Bug Tracker" = "https://github.com/rlipko/synthnn/issues"
+Homepage = "https://github.com/rivkalipko/synthnn"
+"Bug Tracker" = "https://github.com/rivkalipko/synthnn/issues"

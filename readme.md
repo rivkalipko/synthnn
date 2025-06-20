@@ -43,7 +43,7 @@ model.summary()
 
 # Generate visualizations
 model.plot("gap")  # ATT over time
-model.plot("counterfactual")  # Observed vs synthetic paths
+model.plot("counterfactual")  # Observed vs counterfactual paths
 ```
 
 ## Complete Example: Replicating Abadie et al. (2010)
@@ -171,9 +171,9 @@ event_time    att N_units    se   p_value ci_lower ci_upper    method
 ============================================================
 ```
 ### Visualizations
-![](tests/gap.png)
-![](tests/counterfactual.png)
-![](tests/graphics.png)
+![](https://github.com/rivkalipko/synthnn/blob/main/tests/gap.png?raw=true)
+![](https://github.com/rivkalipko/synthnn/blob/main/tests/counterfactual.png?raw=true)
+![](https://github.com/rivkalipko/synthnn/blob/main/tests/graphics.png?raw=true)
 
 ## Parameters
 
@@ -237,7 +237,7 @@ The implementation in this package adapts and builds upon the code from the [`sy
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](https://github.com/rlipko/synthnn/blob/main/LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](https://github.com/rivkalipko/synthnn/blob/main/LICENSE) file for details.
 
 ## Citation
 
@@ -248,7 +248,7 @@ If you use this package in your research, you can cite it as below.
   author = {Lipkovitz, Rivka},
   month = jun,
   title = {{synthnn: a Python package for estimating treatment effects using Synthetic Nearest Neighbors}},
-  url = {[https://github.com/rlipko/synthnn](https://github.com/rlipko/synthnn)},
+  url = {[https://github.com/rivkalipko/synthnn](https://github.com/rivkalipko/synthnn)},
   year = {2025}
 }
 ```
