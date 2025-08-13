@@ -48,15 +48,13 @@ model.plot("counterfactual")  # Observed vs counterfactual paths
 
 ## Complete Example: Replicating Abadie et al. (2010)
 
-This example demonstrates how to use SNN to replicate the famous California tobacco study. The prop99.csv file can be found in the tests folder of this repository.
+This example demonstrates how to use SNN to replicate the famous California tobacco study. The prop99.csv file can be found in the [demos](https://github.com/rivkalipko/synthnn/blob/main/demos/prop99.csv) folder of the GitHub repository.
 
 ```python
 import pandas as pd
-from synthnn import SNN
+from src.synthnn import SNN
 
-# -------------------------------------------------
 # 1. Load the data from Abadie et al. (2010)
-# -------------------------------------------------
 df0 = pd.read_csv("prop99.csv", low_memory=False)
 
 df = (
@@ -76,14 +74,10 @@ bad_units = ["District of Columbia", "United States", "Guam",
              "Puerto Rico", "American Samoa", "Virgin Islands"]
 df = df[~df["Unit"].isin(bad_units)]
 
-# ---------------------------------
 # 2. Define the treatment indicator
-# ---------------------------------
 df["W"] = ((df["Unit"] == "California") & (df["Time"] >= 1989)).astype(int)
 
-# ---------------------------------
 # 3. Fit Synthetic-Nearest-Neighbors
-# ---------------------------------
 model = SNN(
     unit_col="Unit",
     time_col="Time",
@@ -104,7 +98,7 @@ model.plot(
     title="SNN replication of Abadie et al. (2010)",
     xlabel="Event Time (0 = 1989)",
     ylabel="ATT (packs per-capita)"
-)
+).write_image("gap.png")
 
 # 6. Plot observed vs counterfactual paths
 model.plot(
@@ -112,7 +106,7 @@ model.plot(
     title="Observed vs Synthetic California",
     xlabel="Event Time (0 = 1989)",
     ylabel="Cigarette Consumption (packs per-capita)"
-)
+).write_image("counterfactual.png")
 
 # 7. Same as before but with calendar time on the x-axis, only post-treatment periods, and custom colors
 model.plot(
@@ -124,10 +118,25 @@ model.plot(
     ylabel="Cigarette Consumption (packs per-capita)",
     counterfactual_color="#406B34",  # green
     observed_color="#ff7f0e"         # orange
-)
+).write_image("graphics.png")
+
+# 8. Inference using the placebo test (only works if there is exactly one treated unit)
+model_pc = SNN(unit_col="Unit", time_col="Time", outcome_col="Y", treat_col="W",
+               variance_type="placebo", alpha=0.05)
+model_pc.fit(df)
+model_pc.summary()
+
+# 9. Plot the results, displaying the paths of the placebo treated units against the actual treated unit
+model_pc.plot(show_placebos=True,
+              title="Placebo Test for Inference",
+              xlabel="Event Time (0 = 1989)",
+              ylabel="ATT (packs per capita)").write_image("placebo.png")
 ```
 ### Ouput
-After running the above code, you will see the following output:
+After running the above code, you will see the following output and graphs:
+<details>
+  <summary>Click to expand SNN Estimation Results</summary>
+
 ```plaintext
 ============================================================
 SNN Estimation Results
@@ -135,60 +144,104 @@ SNN Estimation Results
 
 --- Overall ATT ---
 estimate    method    se p_value ci_lower ci_upper
-  -28.25 bootstrap 2.236       0   -31.26   -23.95
+  -28.25 bootstrap 1.962       0   -32.04   -24.98
 
 
 --- ATT by Event Time (Post-Treatment) ---
 
 event_time    att N_units    se   p_value ci_lower ci_upper    method
-         0  -14.2       1  1.58         0   -17.35   -11.78 bootstrap
-         1 -15.15       1 2.144 1.583e-12   -18.66   -11.68 bootstrap
-         2 -22.02       1 2.186         0    -25.8   -18.67 bootstrap
-         3 -22.12       1 2.336         0   -26.24   -18.12 bootstrap
-         4 -25.27       1 2.196         0   -29.02   -21.48 bootstrap
-         5 -29.18       1 2.288         0   -33.18   -25.17 bootstrap
-         6 -31.54       1  2.45         0      -35   -27.16 bootstrap
-         7 -31.75       1 2.451         0   -35.18   -26.85 bootstrap
-         8 -32.37       1 2.603         0   -36.18   -27.17 bootstrap
-         9  -32.8       1  2.43         0   -36.24   -27.86 bootstrap
-        10 -35.09       1 2.314         0   -38.65   -30.43 bootstrap
-        11 -35.74       1 2.362         0   -39.23   -30.81 bootstrap
-        12 -36.65       1 2.433         0   -39.78   -31.74 bootstrap
-        13 -37.07       1 2.324         0    -40.4   -32.44 bootstrap
-        14 -37.75       1 3.142         0   -42.31   -31.82 bootstrap
-        15 -34.89       1 3.086         0   -38.97   -28.75 bootstrap
-        16 -33.71       1 3.339         0   -38.62    -27.3 bootstrap
-        17  -31.7       1 3.159         0   -36.25   -25.85 bootstrap
-        18 -30.94       1 3.362         0   -36.37    -24.6 bootstrap
-        19 -27.91       1  2.82         0   -32.58   -22.54 bootstrap
-        20 -26.63       1  2.67         0   -31.17   -21.61 bootstrap
-        21 -23.79       1 2.394         0   -27.69   -19.27 bootstrap
-        22 -22.49       1 2.255         0   -26.36   -18.47 bootstrap
-        23 -21.83       1 2.193         0   -25.66   -17.93 bootstrap
-        24 -21.35       1 2.121         0   -25.51   -17.55 bootstrap
-        25 -20.63       1 1.973         0   -24.46    -17.2 bootstrap
+         0  -14.2       1 1.596         0   -17.33   -11.36 bootstrap
+         1 -15.15       1 2.179 3.554e-12   -20.21   -11.35 bootstrap
+         2 -22.02       1 2.327         0   -26.86    -17.3 bootstrap
+         3 -22.12       1 2.399         0   -27.04   -17.62 bootstrap
+         4 -25.27       1 2.254         0   -29.65   -20.97 bootstrap
+         5 -29.18       1 2.282         0   -33.35   -25.59 bootstrap
+         6 -31.54       1 2.109         0   -35.63   -28.13 bootstrap
+         7 -31.75       1 2.102         0   -36.12   -28.25 bootstrap
+         8 -32.37       1 2.161         0   -36.45   -28.93 bootstrap
+         9  -32.8       1 1.968         0   -36.76   -29.28 bootstrap
+        10 -35.09       1 1.985         0   -39.17   -32.11 bootstrap
+        11 -35.74       1 2.094         0      -40   -32.39 bootstrap
+        12 -36.65       1 2.113         0   -41.03    -33.1 bootstrap
+        13 -37.07       1 2.212         0   -41.73   -33.17 bootstrap
+        14 -37.75       1 2.963         0   -43.81   -33.19 bootstrap
+        15 -34.89       1 3.064         0   -41.52   -30.25 bootstrap
+        16 -33.71       1 3.316         0   -40.94   -28.79 bootstrap
+        17  -31.7       1 3.056         0   -38.04   -26.56 bootstrap
+        18 -30.94       1 3.241         0   -37.83   -25.61 bootstrap
+        19 -27.91       1 2.744         0   -33.42   -23.05 bootstrap
+        20 -26.63       1 2.675         0   -31.88   -22.27 bootstrap
+        21 -23.79       1 2.277         0   -28.14    -19.5 bootstrap
+        22 -22.49       1 2.156         0    -26.7   -18.41 bootstrap
+        23 -21.83       1 2.102         0   -26.03   -18.08 bootstrap
+        24 -21.35       1 2.077         0   -25.09   -17.35 bootstrap
+        25 -20.63       1 1.961         0   -24.23   -17.15 bootstrap
+
+============================================================
+============================================================
+SNN Estimation Results
+============================================================
+
+--- Overall ATT ---
+estimate placebo_p placebo_rank
+  -28.25      0.08            4
+
+Placebo Fisher p-value: 0.08  (rank 4/50)
+
+
+--- ATT by Event Time (Post-Treatment) ---
+
+ event_time    att N_units placebo_p
+          0  -14.2       1       0.2
+          1 -15.15       1      0.22
+          2 -22.02       1      0.12
+          3 -22.12       1      0.12
+          4 -25.27       1      0.08
+          5 -29.18       1      0.06
+          6 -31.54       1      0.06
+          7 -31.75       1      0.06
+          8 -32.37       1      0.06
+          9  -32.8       1      0.04
+         10 -35.09       1      0.04
+         11 -35.74       1      0.04
+         12 -36.65       1      0.04
+         13 -37.07       1      0.06
+         14 -37.75       1       0.1
+         15 -34.89       1      0.12
+         16 -33.71       1       0.1
+         17  -31.7       1      0.14
+         18 -30.94       1      0.14
+         19 -27.91       1      0.14
+         20 -26.63       1       0.2
+         21 -23.79       1       0.2
+         22 -22.49       1      0.18
+         23 -21.83       1      0.18
+         24 -21.35       1      0.16
+         25 -20.63       1      0.12
 
 ============================================================
 ```
-### Visualizations
-![](https://github.com/rivkalipko/synthnn/blob/main/tests/gap.png?raw=true)
-![](https://github.com/rivkalipko/synthnn/blob/main/tests/counterfactual.png?raw=true)
-![](https://github.com/rivkalipko/synthnn/blob/main/tests/graphics.png?raw=true)
+</details>
+
+![](https://github.com/rivkalipko/synthnn/blob/main/demos/gap.png?raw=true)
+![](https://github.com/rivkalipko/synthnn/blob/main/demos/counterfactual.png?raw=true)
+![](https://github.com/rivkalipko/synthnn/blob/main/demos/graphics.png?raw=true)
+![](https://github.com/rivkalipko/synthnn/blob/main/demos/placebo.png?raw=true)
 
 ## Parameters
 
-### SNN Class Parameters
+### General Parameters
 
 - **unit_col, time_col, outcome_col, treat_col** (str): Column names for unit ID, time, outcome, and treatment indicator
 - **variance_type** (str): Method for uncertainty quantification:
   - `"jackknife"`: Leave-one-unit-out resampling
   - `"bootstrap"`: Block bootstrap on units (default)
-  - `"placebo"`: Fisher randomization test
-- **resamples** (int): Number of bootstrap/placebo resamples (default: 500)
+  - `"placebo"`: Fisher randomization test for when there is exactly one treated unit
+- **resamples** (int): Number of bootstrap resamples (default: 500)
 - **alpha** (float): Significance level for confidence intervals (default: 0.05)
 - **snn_params** (dict): Parameters for the underlying SyntheticNearestNeighbors imputer
 
-### SNN Imputation Parameters
+### SNN Parameters
 
 The `snn_params` dictionary can include:
 
@@ -224,11 +277,11 @@ After fitting, the model provides several key attributes:
 
 ## Requirements
 
-- pandas
-- numpy
-- scipy
-- plotly
-- kaleido for exporting images
+- `pandas`
+- `numpy`
+- `scipy`
+- `plotly`
+- `kaleido` for exporting images
 - The `SyntheticNearestNeighbors` base class (included in package)
 
 ## Acknowledgments
