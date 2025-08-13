@@ -221,6 +221,7 @@ Placebo Fisher p-value: 0.08  (rank 4/50)
 </details>
 
 **Plots**
+
 ![](https://github.com/rivkalipko/synthnn/blob/main/demos/gap.png?raw=true)
 ![](https://github.com/rivkalipko/synthnn/blob/main/demos/counterfactual.png?raw=true)
 ![](https://github.com/rivkalipko/synthnn/blob/main/demos/graphics.png?raw=true)
