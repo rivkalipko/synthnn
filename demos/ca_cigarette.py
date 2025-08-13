@@ -1,5 +1,5 @@
 import pandas as pd
-from src.synthnn import SNN
+from synthnn import SNN
 
 # 1. Load the data from Abadie et al. (2010)
 df0 = pd.read_csv("prop99.csv", low_memory=False)
