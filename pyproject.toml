@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "synthnn"
-version = "1.1.2"
+version = "1.1.3"
 authors = [
   { name="Rivka Lipkovitz", email="rivkal@mit.edu" },
 ]
-description = "A Python package for estimating treatment effects using Synthetic Nearest Neighbors."
+description = "A Python package implementing the synthetic nearest neighbors estimator for panel data causal inference."
 readme = "README.md"
 requires-python = ">=3.9"
 

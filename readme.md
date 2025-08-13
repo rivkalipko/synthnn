@@ -1,17 +1,15 @@
 # synthnn
 
-A Python implementation of the Synthetic Nearest Neighbors (SNN) estimator for causal inference with panel data. The SNN estimator imputes each treated observation's untreated potential outcome using a synthetic nearest-neighbor "donor" pool, then averages the resulting effects to obtain the Average Treatment Effect on the Treated (ATT).
+A Python package for panel data causal inference implementing synthetic nearest neighbors (SNN), a causal model for matrix completion that imputes treated units’ counterfactual outcomes from weighted nearest neighbors in a low-rank subspace learned from pre-treatment data..
 
 ## Features
 
-- **Flexible Panel Data Analysis**: Supports both simultaneous and staggered treatment adoption
-- **Multiple Inference Methods**: Jackknife, bootstrap, or Fisher-style placebo tests for uncertainty quantification
-- **Rich Visualization**: Built-in plotting for gap plots and counterfactual comparisons
-- **Customizable Imputation**: Configurable SNN parameters for different data characteristics
- 
-## Installation
+* **Flexible Panel Data Support** — Works with both simultaneous and staggered treatment adoption.
+* **Multiple Inference Methods** — Jackknife, bootstrap, and Fisher-style placebo tests for uncertainty quantification.
+* **Built-in Visualization** — Gap plots and observed vs. counterfactual comparisons.
+* **Customizable Imputation** — Fully configurable parameters to match your data’s characteristics.
 
-You can install `synthnn` from PyPI using pip:
+## Installation
 
 ```bash
 pip install synthnn
@@ -26,7 +24,7 @@ from synthnn import SNN
 # Load your panel data
 df = pd.read_csv("your_panel_data.csv")
 
-# Initialize the SNN model
+# Initialize and fit the SNN model
 model = SNN(
     unit_col="Unit",
     time_col="Time", 
@@ -36,19 +34,18 @@ model = SNN(
     resamples=500,
     alpha=0.05
 )
-
-# Fit the model and get results
 model.fit(df)
 model.summary()
 
-# Generate visualizations
-model.plot("gap")  # ATT over time
-model.plot("counterfactual")  # Observed vs counterfactual paths
+# Visualize results
+model.plot("gap")              # Average treatment effect on the treated (ATT) over time
+model.plot("counterfactual")   # Observed vs. counterfactual
 ```
 
-## Complete Example: Replicating Abadie et al. (2010)
+## Full Example — Replicating Abadie et al. (2010)
 
-This example demonstrates how to use SNN to replicate the famous California tobacco study. The prop99.csv file can be found in the [demos](https://github.com/rivkalipko/synthnn/blob/main/demos/prop99.csv) folder of the GitHub repository.
+This example reproduces the well-known California tobacco control study.
+Data: [`prop99.csv`](https://github.com/rivkalipko/synthnn/blob/main/demos/prop99.csv) in the `demos` folder.
 
 ```python
 import pandas as pd
@@ -132,10 +129,9 @@ model_pc.plot(show_placebos=True,
               xlabel="Event Time (0 = 1989)",
               ylabel="ATT (packs per capita)").write_image("placebo.png")
 ```
-### Ouput
-After running the above code, you will see the following output and graphs:
+
 <details>
-  <summary>Click to expand SNN Estimation Results</summary>
+<summary><b>Click to expand output</b></summary>
 
 ```plaintext
 ============================================================
@@ -144,38 +140,38 @@ SNN Estimation Results
 
 --- Overall ATT ---
 estimate    method    se p_value ci_lower ci_upper
-  -28.25 bootstrap 1.962       0   -32.04   -24.98
+  -28.25 bootstrap 2.032       0   -32.07   -24.03
 
 
 --- ATT by Event Time (Post-Treatment) ---
 
 event_time    att N_units    se   p_value ci_lower ci_upper    method
-         0  -14.2       1 1.596         0   -17.33   -11.36 bootstrap
-         1 -15.15       1 2.179 3.554e-12   -20.21   -11.35 bootstrap
-         2 -22.02       1 2.327         0   -26.86    -17.3 bootstrap
-         3 -22.12       1 2.399         0   -27.04   -17.62 bootstrap
-         4 -25.27       1 2.254         0   -29.65   -20.97 bootstrap
-         5 -29.18       1 2.282         0   -33.35   -25.59 bootstrap
-         6 -31.54       1 2.109         0   -35.63   -28.13 bootstrap
-         7 -31.75       1 2.102         0   -36.12   -28.25 bootstrap
-         8 -32.37       1 2.161         0   -36.45   -28.93 bootstrap
-         9  -32.8       1 1.968         0   -36.76   -29.28 bootstrap
-        10 -35.09       1 1.985         0   -39.17   -32.11 bootstrap
-        11 -35.74       1 2.094         0      -40   -32.39 bootstrap
-        12 -36.65       1 2.113         0   -41.03    -33.1 bootstrap
-        13 -37.07       1 2.212         0   -41.73   -33.17 bootstrap
-        14 -37.75       1 2.963         0   -43.81   -33.19 bootstrap
-        15 -34.89       1 3.064         0   -41.52   -30.25 bootstrap
-        16 -33.71       1 3.316         0   -40.94   -28.79 bootstrap
-        17  -31.7       1 3.056         0   -38.04   -26.56 bootstrap
-        18 -30.94       1 3.241         0   -37.83   -25.61 bootstrap
-        19 -27.91       1 2.744         0   -33.42   -23.05 bootstrap
-        20 -26.63       1 2.675         0   -31.88   -22.27 bootstrap
-        21 -23.79       1 2.277         0   -28.14    -19.5 bootstrap
-        22 -22.49       1 2.156         0    -26.7   -18.41 bootstrap
-        23 -21.83       1 2.102         0   -26.03   -18.08 bootstrap
-        24 -21.35       1 2.077         0   -25.09   -17.35 bootstrap
-        25 -20.63       1 1.961         0   -24.23   -17.15 bootstrap
+         0  -14.2       1 1.651         0   -17.06   -11.28 bootstrap
+         1 -15.15       1 2.077 3.015e-13   -18.75   -11.43 bootstrap
+         2 -22.02       1 2.089         0   -26.16   -18.22 bootstrap
+         3 -22.12       1 2.184         0   -26.15   -18.05 bootstrap
+         4 -25.27       1 1.959         0   -28.55   -21.33 bootstrap
+         5 -29.18       1 2.129         0   -32.97      -25 bootstrap
+         6 -31.54       1 2.052         0   -35.08    -27.1 bootstrap
+         7 -31.75       1 2.054         0    -35.6   -27.29 bootstrap
+         8 -32.37       1 2.207         0    -36.2   -28.41 bootstrap
+         9  -32.8       1 2.035         0   -36.08   -28.68 bootstrap
+        10 -35.09       1 2.144         0   -38.64   -31.03 bootstrap
+        11 -35.74       1 2.196         0   -39.74   -31.06 bootstrap
+        12 -36.65       1 2.301         0   -41.26   -31.28 bootstrap
+        13 -37.07       1 2.291         0    -41.5   -31.68 bootstrap
+        14 -37.75       1 3.217         0   -44.07   -31.11 bootstrap
+        15 -34.89       1 3.052         0   -40.54   -27.46 bootstrap
+        16 -33.71       1 3.303         0   -39.55   -26.32 bootstrap
+        17  -31.7       1 3.097         0   -37.31   -25.12 bootstrap
+        18 -30.94       1 3.264         0    -36.9   -23.89 bootstrap
+        19 -27.91       1 2.687         0   -32.99   -22.78 bootstrap
+        20 -26.63       1 2.583         0   -31.33   -21.51 bootstrap
+        21 -23.79       1 2.254         0   -27.74   -19.66 bootstrap
+        22 -22.49       1 2.131         0   -26.36   -18.57 bootstrap
+        23 -21.83       1 2.042         0   -25.58   -18.39 bootstrap
+        24 -21.35       1 2.044         0   -24.94   -17.73 bootstrap
+        25 -20.63       1 1.895         0   -24.19   -17.52 bootstrap
 
 ============================================================
 ============================================================
@@ -221,8 +217,10 @@ Placebo Fisher p-value: 0.08  (rank 4/50)
 
 ============================================================
 ```
+
 </details>
 
+**Plots**
 ![](https://github.com/rivkalipko/synthnn/blob/main/demos/gap.png?raw=true)
 ![](https://github.com/rivkalipko/synthnn/blob/main/demos/counterfactual.png?raw=true)
 ![](https://github.com/rivkalipko/synthnn/blob/main/demos/graphics.png?raw=true)
@@ -230,63 +228,56 @@ Placebo Fisher p-value: 0.08  (rank 4/50)
 
 ## Parameters
 
-### General Parameters
+### General
 
-- **unit_col, time_col, outcome_col, treat_col** (str): Column names for unit ID, time, outcome, and treatment indicator
-- **variance_type** (str): Method for uncertainty quantification:
-  - `"jackknife"`: Leave-one-unit-out resampling
-  - `"bootstrap"`: Block bootstrap on units (default)
-  - `"placebo"`: Fisher randomization test for when there is exactly one treated unit
-- **resamples** (int): Number of bootstrap resamples (default: 500)
-- **alpha** (float): Significance level for confidence intervals (default: 0.05)
-- **snn_params** (dict): Parameters for the underlying SyntheticNearestNeighbors imputer
+* **unit\_col, time\_col, outcome\_col, treat\_col** *(str)* — Column names for unit ID, time, outcome, and treatment indicator.
+* **variance\_type** *(str)* — Inference method:
 
-### SNN Parameters
+  * `"jackknife"` — Leave-one-unit-out resampling
+  * `"bootstrap"` *(default)* — Block bootstrap on units
+  * `"placebo"` — Fisher randomization test (only when exactly one treated unit)
+* **resamples** *(int)* — Bootstrap resamples (default: 500)
+* **alpha** *(float)* — Significance level for confidence intervals (default: 0.05)
+* **snn\_params** *(dict)* — Parameters for the `SyntheticNearestNeighbors` imputer.
 
-The `snn_params` dictionary can include:
+### SNN Parameters (`snn_params`)
 
-- **n_neighbors** (int): Number of nearest neighbors to use (default: 1)
-- **weights** (str): Weight function for neighbors (`'uniform'` or `'distance'`)
-- **random_splits** (bool): Whether to use random splits in the algorithm
-- **max_rank** (int): Maximum rank for low-rank approximations
-- **spectral_t** (float): Spectral threshold parameter (default: 0.1)
-- **linear_span_eps** (float): Linear span epsilon (default: 0.1)
-- **subspace_eps** (float): Subspace epsilon (default: 0.1)
-- **min_value, max_value** (float): Bounds for imputed values
-- **verbose** (bool): Whether to print progress information
+* **n\_neighbors** *(int)* — Number of nearest neighbors (default: 1)
+* **weights** *(str)* — `'uniform'` or `'distance'`
+* **random\_splits** *(bool)* — Use random splits in the algorithm
+* **max\_rank** *(int)* — Maximum rank for low-rank approximation
+* **spectral\_t, linear\_span\_eps, subspace\_eps** *(float)* — Algorithm thresholds (default: 0.1)
+* **min\_value, max\_value** *(float)* — Bounds for imputed values
+* **verbose** *(bool)* — Print progress.
 
 ### Plot Parameters
 
-- **plot_type** (str): `"gap"` for ATT series or `"counterfactual"` for observed vs counterfactual paths
-- **calendar_time** (bool): Use calendar time instead of event time (simultaneous adoption only)
-- **xrange** (tuple): Range for x-axis as `(min, max)`
-- **title, xlabel, ylabel** (str): Custom labels
-- **figsize** (tuple): Figure size as `(width, height)`
-- **color, observed_color, counterfactual_color** (str): Custom colors for different plot elements
+* **plot\_type** — `"gap"` or `"counterfactual"`
+* **calendar\_time** *(bool)* — Use calendar time (for simultaneous adoption only)
+* **xrange** *(tuple)* — `(min, max)` for x-axis
+* **title, xlabel, ylabel** *(str)* — Labels
+* **figsize** *(tuple)* — `(width, height)`
+* **color, observed\_color, counterfactual\_color, placebo\_color** *(str)* — Plot colors
+* **placebo\_opacity** *(float)* — Opacity for placebo lines (default: 0.25)
 
-## Output
+## Output Attributes
 
-After fitting, the model provides several key attributes:
+After fitting, the model exposes:
 
-- **overall_att_**: Overall average treatment effect with inference statistics
-- **att_by_event_time_**: ATT series by event time with confidence intervals
-- **att_by_time_**: ATT series by calendar time
-- **individual_effects_**: Unit-level treatment effects
-- **counterfactual_event_df_**: Observed vs counterfactual paths by event time
-- **counterfactual_df_**: Observed vs counterfactual paths by calendar time
+* **overall\_att\_** — Overall ATT with inference statistics
+* **att\_by\_event\_time\_** — ATT series by event time
+* **att\_by\_time\_** — ATT series by calendar time
+* **individual\_effects\_** — Unit-level effects
+* **counterfactual\_event\_df\_** — Observed vs. counterfactual (event time)
+* **counterfactual\_df\_** — Observed vs. counterfactual (calendar time)
 
 ## Requirements
 
-- `pandas`
-- `numpy`
-- `scipy`
-- `plotly`
-- `kaleido` for exporting images
-- The `SyntheticNearestNeighbors` base class (included in package)
+* `pandas`, `numpy`, `scipy`, `plotly`, `scikit-learn`
 
 ## Acknowledgments
 
-The implementation in this package adapts and builds upon the code from the [`syntheticNN`](https://github.com/deshen24/syntheticNN) repository by Dennis Shen.
+The implementation in this package adapts and builds upon the code from the [syntheticNN](https://github.com/deshen24/syntheticNN) repository by Dennis Shen.
 
 ## License
 
@@ -295,7 +286,6 @@ This project is licensed under the MIT License - see the [LICENSE](https://githu
 ## Citation
 
 If you use this package in your research, you can cite it as below.
-
 ```
 @software{synthnn,
   author = {Lipkovitz, Rivka},
