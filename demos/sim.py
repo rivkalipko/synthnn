@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from src.synthnn import SNN
+from synthnn import SNN
 
 # --- 1. Generate Sample Panel Data ---
 # Create a dataset with 10 units over 10 time periods.
