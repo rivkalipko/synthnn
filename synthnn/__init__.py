@@ -7,90 +7,77 @@ from plotly.subplots import make_subplots
 
 
 class SNN:
-    """
-    Synthetic Nearest Neighbours (SNN) estimator for panel-data causal analysis.
+    r"""
+    Synthetic Nearest Neighbors (SNN) estimator for panel-data causal analysis.
 
-    The estimator imputes each treated observation’s untreated potential
-    outcome using a synthetic nearest-neighbour “donor” pool, then averages the
-    resulting effects to obtain the Average Treatment Effect on the Treated
-    (ATT).  It also supports jackknife, bootstrap, or Fisher-style placebo
-    resampling for uncertainty quantification and high-level diagnostic plots.
+    The estimator imputes each treated observation’s untreated potential outcome
+    using a synthetic nearest-neighbor donor pool, then averages the resulting
+    effects to obtain the Average Treatment Effect on the Treated (ATT). It also
+    supports jackknife, bootstrap, or Fisher-style placebo resampling for
+    uncertainty quantification and provides diagnostic plots.
 
     ----------
-    Core workflow
+    Quick start
     ----------
     >>> model = SNN(unit_col="id", time_col="year", outcome_col="y", treat_col="d",
     ...             variance_type="bootstrap", resamples=999)
     >>> model.fit(panel_df)
-    >>> model.plot("gap") # event-time ATT (a “gap” plot)
-    >>> model.plot("counterfactual")       # raw vs counterfactual path (event time)
+    >>> model.plot("gap")                 # event-time ATT (the “gap” plot)
+    >>> model.plot("counterfactual")      # observed vs. counterfactual (event time)
     >>> model.summary()
 
     ----------
     Parameters
     ----------
     unit_col, time_col, outcome_col, treat_col : str, default "Unit", "Time", "Y", "W"
-        Column names identifying unit, period, outcome and treatment.
-
+        Column names identifying unit, period, outcome, and treatment.
     snn_params : dict, optional
-        Extra keyword arguments forwarded to the underlying
-        :class:`SyntheticNearestNeighbors` imputer.
-        Example: ``{'n_neighbors': 5, 'weights': 'uniform'}``.
-
+        Additional keyword arguments forwarded to the underlying
+        :class:`SyntheticNearestNeighbors` imputer (e.g., ``{'n_neighbors': 5, 'weights': 'uniform'}``).
     variance_type : {"jackknife", "bootstrap", "placebo"}, default "bootstrap"
-        Method for uncertainty quantification:
-        - "jackknife" : Leave-one-unit-out resampling.
-        - "bootstrap" : Block bootstrap on units (with replacement).
-        - "placebo"   : Deterministic Fisher-style placebo test that requires exactly
-                        one treated unit. It simulates the observed treatment start
-                        time on each originally untreated unit (one at a time) to
-                        form the placebo distribution.
+        Method for uncertainty quantification.
 
+        - ``"jackknife"``: Leave-one-unit-out resampling.
+        - ``"bootstrap"``: Block bootstrap on units (with replacement).
+        - ``"placebo"``: Fisher-style deterministic placebo test that **requires exactly
+          one treated unit**. It simulates the observed treatment start time on each
+          originally untreated unit (one at a time) to form the placebo distribution.
     resamples : int, default 500
-        Number of resamples used when `variance_type = "bootstrap"`.
-
+        Number of resamples used when ``variance_type="bootstrap"``.
     alpha : float, default 0.05
-        Significance level for confidence intervals and two-sided p-values.
-        Used for "jackknife" and "bootstrap" variance types.
+        Significance level for confidence intervals and two-sided p-values
+        (used for ``"jackknife"`` and ``"bootstrap"``).
 
     ----------
-    Main attributes (populated after `.fit`)
+    Attributes (populated after :meth:`fit`)
     ----------
     results_ : dict
-        A raw store of all estimation outputs, including point estimates,
-        standard errors, CIs, and p-values for overall and by-event-time effects.
-    overall_att_ : pd.DataFrame
-        A single-row DataFrame containing the point estimate and inference
-        statistics for the overall ATT.
-    att_by_time_ : pd.DataFrame
-        A DataFrame containing the ATT series aggregated by calendar time.
-        Note: Inference statistics are no longer computed for this series.
-    att_by_event_time_ : pd.DataFrame
-        A DataFrame containing the ATT series aggregated by event time
-        (time relative to treatment), along with inference statistics.
-    individual_effects_ : pd.DataFrame
-        A DataFrame detailing the actual outcome, imputed counterfactual, and
-        estimated effect for every treated unit-time observation.
-    counterfactual_df_ : pd.DataFrame
-        A DataFrame containing the mean observed and counterfactual outcome
-        paths for treated units, aggregated by calendar time.
-    counterfactual_event_df_ : pd.DataFrame
-        A DataFrame containing the mean observed and counterfactual outcome
-        paths for treated units, aggregated by event time.
-    placebo_dist_ : np.ndarray
-        If `variance_type="placebo"`, this array holds the distribution of
-        placebo ATTs from the randomisation test.
+        Raw store of all estimation outputs, including point estimates, standard errors,
+        confidence intervals, and p-values for overall and by-event-time effects.
+    overall_att_ : pandas.DataFrame
+        Single-row DataFrame with point estimate and inference statistics for the overall ATT.
+    att_by_time_ : pandas.DataFrame
+        ATT series aggregated by calendar time. (Inference statistics are not computed for this series.)
+    att_by_event_time_ : pandas.DataFrame
+        ATT series aggregated by event time (relative to first treatment), with inference statistics.
+    individual_effects_ : pandas.DataFrame
+        Actual outcome, imputed counterfactual, and estimated effect for every treated unit-time observation.
+    counterfactual_df_ : pandas.DataFrame
+        Mean observed and counterfactual outcome paths for treated units, aggregated by calendar time.
+    counterfactual_event_df_ : pandas.DataFrame
+        Mean observed and counterfactual outcome paths for treated units, aggregated by event time.
+    placebo_dist_ : numpy.ndarray
+        If ``variance_type="placebo"``, distribution of placebo ATTs from the randomization test.
+    placebo_event_dist_ : list[pandas.Series]
+        If ``variance_type="placebo"``, list of placebo ATT paths over event time.
 
     ----------
     Notes
     ----------
-    - The class assumes no treatment reversals; periods after first treatment
-      are coded `1` permanently.
-    - Event-time output is truncated to non-negative periods (t ≥ 0) by default
-      in the summary view.
-    - When `variance_type="placebo"`, the summary prints both the Fisher
-      p-value and the rank of the observed ATT among all resamples
-      (`rank = 1` means the most extreme).
+    - No treatment reversals are assumed; periods after first treatment are coded ``1`` permanently.
+    - In the printed summary, event-time output is truncated to non-negative periods (``τ ≥ 0``).
+    - With ``variance_type="placebo"``, the summary reports the Fisher p-value and the rank of the observed
+      ATT within the placebo distribution (``rank = 1`` = most extreme).
     """
 
     def __init__(self,
@@ -98,26 +85,25 @@ class SNN:
                  time_col: str = "Time",
                  outcome_col: str = "Y",
                  treat_col: str = "W",
-                 snn_params: dict = None,
+                 snn_params: dict | None = None,
                  variance_type: str = "bootstrap",
                  resamples: int = 500,
                  alpha: float = 0.05):
         """
-        Initializes the SNN estimator with specified parameters.
+        Initialize the SNN estimator.
 
         Parameters
         ----------
         unit_col, time_col, outcome_col, treat_col : str, default "Unit", "Time", "Y", "W"
-            Column names identifying unit, period, outcome and treatment.
+            Column names identifying unit, period, outcome, and treatment.
         snn_params : dict, optional
-            Extra keyword arguments forwarded to the underlying
-            :class:`SyntheticNearestNeighbors` imputer.
+            Extra keyword arguments forwarded to :class:`SyntheticNearestNeighbors`.
         variance_type : {"jackknife", "bootstrap", "placebo"}, default "bootstrap"
             Method for uncertainty quantification.
         resamples : int, default 500
-            Number of resamples for "bootstrap" or "placebo" methods.
+            Number of resamples (used for ``"bootstrap"``).
         alpha : float, default 0.05
-            Significance level for confidence intervals and p-values.
+            Significance level for confidence intervals and p-values (jackknife/bootstrap).
         """
         self.unit_col = unit_col
         self.time_col = time_col
@@ -130,7 +116,7 @@ class SNN:
         self.placebo_se = variance_type == "placebo"
         self.alpha = alpha
 
-        # Attributes to be populated by fit()
+        # Attributes populated by fit()
         self.results_ = None
         self.overall_att_ = None
         self.att_by_time_ = None
@@ -144,8 +130,8 @@ class SNN:
         self._full_data_treatment_start_map = None
         self._df_effects_all_ = None
 
-    def __repr__(self):
-        """Provides a string representation of the SNN object."""
+    def __repr__(self) -> str:
+        """Return a concise string representation of the SNN object."""
         params = [
             f"unit_col='{self.unit_col}'",
             f"time_col='{self.time_col}'",
@@ -160,24 +146,24 @@ class SNN:
     @staticmethod
     def _get_treatment_start_times(df: pd.DataFrame, unit_col: str, time_col: str, treat_col: str) -> pd.Series:
         """
-        Identifies the first treatment time for each unit.
+        Identify the first treatment time for each unit.
 
         Parameters
         ----------
-        df : pd.DataFrame
-            The panel data.
+        df : pandas.DataFrame
+            Panel data.
         unit_col : str
-            The name of the unit identifier column.
+            Unit identifier column.
         time_col : str
-            The name of the time period column.
+            Time period column (numeric).
         treat_col : str
-            The name of the treatment indicator column.
+            Treatment indicator column (0/1).
 
         Returns
         -------
-        pd.Series
-            A Series mapping each unit ID to its first treatment time. Returns an
-            empty Series if no units are treated.
+        pandas.Series
+            Maps each unit ID to its first treatment time. Returns an empty Series
+            if no units are treated or if inputs are invalid/non-numeric.
         """
         empty_series_dtype = df[
             time_col].dtype if time_col in df.columns and not df.empty and pd.api.types.is_numeric_dtype(
@@ -197,32 +183,36 @@ class SNN:
             'treatment_start_time')
         return treat_start_times
 
-    def _get_snn_results(self, df_subset: pd.DataFrame, snn_params_from_user: dict = None):
+    def _get_snn_results(self, df_subset: pd.DataFrame, snn_params_from_user: dict | None = None):
         """
-        Core internal function to calculate SNN-based treatment effects.
+        Core internal routine to compute SNN-based treatment effects.
 
-        This function takes a panel dataset, pivots it into a wide format,
-        uses the SyntheticNearestNeighbors imputer to fill in counterfactuals
-        for treated observations, and then calculates the treatment effects.
+        Workflow:
+          1. Pivot the panel to wide outcome/treatment matrices.
+          2. Mask treated observations and impute counterfactuals with
+             :class:`SyntheticNearestNeighbors`.
+          3. Compute individual effects for treated observations and aggregate.
 
         Parameters
         ----------
-        df_subset : pd.DataFrame
-            A subset of the panel data to be processed.
+        df_subset : pandas.DataFrame
+            Subset of the panel data to process.
         snn_params_from_user : dict, optional
-            User-provided parameters to pass to the SyntheticNearestNeighbors
-            imputer, which override the defaults.
+            Parameters to pass to the imputer (override defaults).
 
         Returns
         -------
         tuple
-            A tuple containing three elements:
-            1. pd.DataFrame: `individual_effects_df` - Effects for each treated
-               unit-time observation.
-            2. float: `estimated_overall_att` - The average treatment effect on
-               the treated (ATT) across all treated observations.
-            3. pd.DataFrame: `effects_eventually_treated_df` - All effects
-               (pre and post) for units that are ever treated.
+            (individual_effects_df, estimated_overall_att, effects_eventually_treated_df), where
+
+            - individual_effects_df : pandas.DataFrame
+                Effects for each treated unit-time observation; columns:
+                [unit_col, time_col, "actual", "counterfactual", "effect"].
+            - estimated_overall_att : float
+                ATT across all treated observations.
+            - effects_eventually_treated_df : pandas.DataFrame
+                Effects (pre/post) for all units that are ever treated; columns:
+                [unit_col, time_col, "effect"].
         """
         empty_individual_effects_df = pd.DataFrame(
             columns=[self.unit_col, self.time_col, 'actual', 'counterfactual', 'effect'])
@@ -259,7 +249,7 @@ class SNN:
                 if isinstance(X_completed_snn_output, np.ndarray):
                     imputed_values_matrix = pd.DataFrame(X_completed_snn_output, index=outcome_matrix.index,
                                                          columns=outcome_matrix.columns)
-                else:  # Is already a DataFrame
+                else:
                     imputed_values_matrix = X_completed_snn_output.copy()
 
             counterfactual_matrix = imputed_values_matrix
@@ -298,29 +288,26 @@ class SNN:
             return empty_individual_effects_df, np.nan, empty_effects_etu_df
 
     def _get_event_time_aggregates(self, effects_df: pd.DataFrame, original_panel_df: pd.DataFrame,
-                                   treatment_start_map: pd.Series):
+                                   treatment_start_map: pd.Series) -> pd.DataFrame:
         """
-        Aggregates effects by event time (time relative to treatment).
+        Aggregate effects by event time (relative to first treatment).
 
-        Event time is calculated sequentially based on the sorted list of unique
-        time periods in the data, not on the absolute difference in time values.
+        Event time is computed using the **order** of unique time periods observed
+        for each unit (i.e., sequential index), not absolute differences in time values.
 
         Parameters
         ----------
-        effects_df : pd.DataFrame
-            A DataFrame of effects for eventually treated units, containing
-            unit, time, and effect columns.
-        original_panel_df : pd.DataFrame
-            The original, full panel dataset used to determine the sequence of
-            time periods for each unit.
-        treatment_start_map : pd.Series
-            A Series mapping unit IDs to their first treatment time.
+        effects_df : pandas.DataFrame
+            Effects for eventually treated units; must include [unit_col, time_col, "effect"].
+        original_panel_df : pandas.DataFrame
+            Full panel dataset used to determine each unit’s observed time sequence.
+        treatment_start_map : pandas.Series
+            Maps unit IDs to their first treatment time.
 
         Returns
         -------
-        pd.DataFrame
-            A DataFrame aggregated by event time, with columns 'event_time',
-            'att' (mean effect), and 'N_units' (number of unique units).
+        pandas.DataFrame
+            Columns: ``["event_time", "att", "N_units"]`` sorted by ``event_time``.
         """
         if effects_df.empty or treatment_start_map.empty:
             return pd.DataFrame(columns=['event_time', 'att', 'N_units'])
@@ -339,12 +326,14 @@ class SNN:
             unit_treatment_start_time = treatment_start_map.loc[unit_id]
             unit_observed_times = sorted(
                 original_panel_df[original_panel_df[self.unit_col] == unit_id][self.time_col].unique())
-            if not unit_observed_times: continue
+            if not unit_observed_times:
+                continue
 
             try:
                 treatment_start_index = unit_observed_times.index(unit_treatment_start_time)
             except ValueError:
-                continue  # Skip if treatment start time not in observed times
+                # Skip if the start time is not in the observed times
+                continue
 
             unit_specific_effects = effects_df_valid[effects_df_valid[self.unit_col] == unit_id]
             for _, row in unit_specific_effects.iterrows():
@@ -369,31 +358,25 @@ class SNN:
     @staticmethod
     def _calculate_bootstrap_stats(point_estimate, bs_estimates_list, alpha_level):
         """
-        Calculates standard error, p-value, and confidence interval from bootstrap estimates using the basic bootstrap method.
+        Compute SE, p-value, and CI from bootstrap estimates (basic/reverse-percentile).
 
-        The confidence interval is computed by the reverse-percentile (basic) method:
-        [2*θ̂ − Q_{1−α/2},  2*θ̂ − Q_{α/2}], where Q_p is the p-th percentile of the bootstrap estimates.
-        The p-value is two-sided using a normal approximation.
+        The 100(1−α)% CI is:
+        ``[2*θ̂ − Q_{1−α/2},  2*θ̂ − Q_{α/2}]``, where ``Q_p`` is the ``p``-th
+        percentile of the bootstrap distribution. The p-value uses a normal approximation.
 
         Parameters
         ----------
         point_estimate : float
-            The original point estimate from the full sample.
-        bs_estimates_list : list or np.ndarray
-            Bootstrap estimates for each resample.
+            Point estimate from the full sample.
+        bs_estimates_list : list or numpy.ndarray
+            Bootstrap estimates from resamples.
         alpha_level : float
-            Significance level for CI (e.g., 0.05 for 95% CI).
+            Significance level (e.g., 0.05).
 
         Returns
         -------
-        se : float
-            Bootstrap standard error (population ddof=0).
-        p_val : float
-            Two-sided p-value via normal approximation.
-        ci_low : float
-            Lower bound of the basic bootstrap confidence interval.
-        ci_upp : float
-            Upper bound of the basic bootstrap confidence interval.
+        tuple
+            ``(se, p_val, ci_low, ci_upp)``.
         """
         valid = np.array([est for est in bs_estimates_list if pd.notna(est) and np.isfinite(est)])
         se = np.nan
@@ -402,21 +385,21 @@ class SNN:
         ci_upp = np.nan
 
         if len(valid) > 1 and pd.notna(point_estimate) and np.isfinite(point_estimate):
-            # standard error
+            # Standard error
             se = np.std(valid, ddof=0)
 
-            # normal‐approximation p-value
+            # Normal-approximation p-value
             if se > 1e-9:
                 z = point_estimate / se
                 p_val = 2 * (1 - scipy.stats.norm.cdf(abs(z)))
             else:
                 p_val = 0.0 if abs(point_estimate) > 1e-9 else 1.0
 
-            # percentiles for basic bootstrap CI
+            # Percentiles for basic bootstrap CI
             lower_pct = np.percentile(valid, 100 * (alpha_level / 2))
             upper_pct = np.percentile(valid, 100 * (1 - alpha_level / 2))
 
-            # basic (reverse‐percentile) confidence interval
+            # Basic (reverse-percentile) CI
             ci_low = 2 * point_estimate - upper_pct
             ci_upp = 2 * point_estimate - lower_pct
 
@@ -425,24 +408,23 @@ class SNN:
     @staticmethod
     def _calculate_jackknife_stats(point_estimate, loo_estimates_list, alpha_level):
         """
-        Calculates statistics from Jackknife (leave-one-out) estimates.
+        Compute statistics from jackknife (leave-one-out) estimates.
 
-        The confidence interval and p-value are based on a normal approximation
-        using the jackknife standard error.
+        The CI and p-value use a normal approximation with the jackknife SE.
 
         Parameters
         ----------
         point_estimate : float
-            The original point estimate from the full sample.
-        loo_estimates_list : list or np.ndarray
-            A list of estimates from each leave-one-out sample.
+            Original point estimate from the full sample.
+        loo_estimates_list : list or numpy.ndarray
+            Estimates from each leave-one-out sample.
         alpha_level : float
-            The significance level for the confidence interval and p-value.
+            Significance level for CI and p-value.
 
         Returns
         -------
         tuple
-            A tuple containing (se, p_val, ci_low, ci_upp).
+            ``(se, p_val, ci_low, ci_upp)``.
         """
         valid_loo = np.array([est for est in loo_estimates_list if pd.notna(est) and np.isfinite(est)])
         N_jack = len(valid_loo)
@@ -464,6 +446,16 @@ class SNN:
     def fit(self, df: pd.DataFrame):
         """
         Fit the SNN model to the provided panel data.
+
+        Parameters
+        ----------
+        df : pandas.DataFrame
+            Panel with required columns ``[unit_col, time_col, outcome_col, treat_col]``.
+
+        Returns
+        -------
+        SNN
+            The fitted instance (for chaining).
         """
         # --- 1. Data Validation and Preparation ---
         if not isinstance(df, pd.DataFrame):
@@ -555,7 +547,7 @@ class SNN:
             'individual_effects': individual_effects_full
         }
 
-        # Default add inference placeholders; we may strip for placebo later
+        # Add inference placeholders; strip later for placebo if needed
         for key in ['overall_att', 'att_by_time', 'att_by_event_time']:
             if isinstance(self.results_[key], dict):
                 self.results_[key].update({'se': np.nan, 'p_value': np.nan, 'ci_lower': np.nan, 'ci_upper': np.nan})
@@ -574,13 +566,13 @@ class SNN:
             self._perform_bootstrap_inference(all_unique_units, all_time_periods, resampling_snn_params)
 
         if self.placebo_se:
-            # Early guard: require exactly one treated unit
+            # Require exactly one treated unit
             ever_treated_by_unit = df_proc.groupby(self.unit_col)[self.treat_col].max()
             if int(ever_treated_by_unit.sum()) != 1:
                 raise ValueError("variance_type='placebo' requires exactly one treated unit in the data.")
             self._perform_placebo_inference(all_unique_units, resampling_snn_params)
 
-            # Strip irrelevant SE/CI/normal p-value fields for placebo outputs
+            # Keep only relevant fields for placebo outputs
             # Overall
             self.results_['overall_att'] = {
                 'estimate': self.results_['overall_att']['estimate'],
@@ -588,11 +580,11 @@ class SNN:
                 'placebo_p': self.results_['overall_att'].get('placebo_p', np.nan),
                 'placebo_rank': self.results_['overall_att'].get('placebo_rank', np.nan)
             }
-            # Event time: keep only event_time/att/N_units + placebo_p
+            # Event time: keep event_time/att/N_units + placebo_p
             evt = self.results_['att_by_event_time']
             keep_evt_cols = [c for c in ['event_time', 'att', 'N_units', 'placebo_p'] if c in evt.columns]
             self.results_['att_by_event_time'] = evt[keep_evt_cols].copy()
-            # Calendar-time table is not used for placebo inference; leave as-is or strip the SE/CI columns
+            # Calendar time: drop SE/CI columns if present
             if isinstance(self.results_['att_by_time'], pd.DataFrame):
                 drop_cols = [c for c in ['se', 'p_value', 'ci_lower', 'ci_upper', 'method'] if
                              c in self.results_['att_by_time'].columns]
@@ -608,22 +600,19 @@ class SNN:
 
     def _perform_jackknife_inference(self, all_units, all_times, snn_params):
         """
-        Helper to run the leave-one-unit-out (Jackknife) resampling procedure.
-
-        This method iterates through each unit, holding it out from the sample,
-        re-estimating the ATT, and then uses these leave-one-out estimates to
-        calculate standard errors and confidence intervals.
+        Run leave-one-unit-out (jackknife) resampling and compute statistics.
 
         Parameters
         ----------
-        all_units : np.ndarray
-            An array of all unique unit identifiers in the dataset.
+        all_units : numpy.ndarray
+            All unique unit identifiers.
         all_times : list
-            A sorted list of all unique time periods in the dataset.
+            Sorted list of unique time periods in the dataset.
         snn_params : dict
-            Parameters to pass to the internal SNN estimation function.
+            Parameters passed to the internal SNN estimation function.
         """
-        if len(all_units) <= 1: return
+        if len(all_units) <= 1:
+            return
 
         self.results_['overall_att']['method'] = 'jackknife'
         self.results_['att_by_event_time']['method'] = 'jackknife'
@@ -632,23 +621,24 @@ class SNN:
 
         for unit_to_remove in all_units:
             df_loo = self._df_proc[self._df_proc[self.unit_col] != unit_to_remove]
-            if df_loo[self.unit_col].nunique() == 0: continue
+            if df_loo[self.unit_col].nunique() == 0:
+                continue
 
             _, overall_att_j, effects_etu_j = self._get_snn_results(df_loo, snn_params)
             loo_estimates['overall'].append(overall_att_j)
 
-            # Event time estimates
+            # Event-time estimates
             treatment_map_loo = self._get_treatment_start_times(df_loo, self.unit_col, self.time_col, self.treat_col)
             att_event_j = self._get_event_time_aggregates(effects_etu_j, df_loo, treatment_map_loo)
             loo_estimates['by_event_time'].append(
                 att_event_j.set_index('event_time')['att'] if 'event_time' in att_event_j else pd.Series(dtype=float))
 
-        # Calculate and store stats for overall ATT
+        # Overall ATT stats
         se, p, cil, ciu = self._calculate_jackknife_stats(self.results_['overall_att']['estimate'],
                                                           loo_estimates['overall'], self.alpha)
         self.results_['overall_att'].update({'se': se, 'p_value': p, 'ci_lower': cil, 'ci_upper': ciu})
 
-        # Calculate and store stats for event-time ATT
+        # Event-time ATT stats
         all_event_times = sorted(list(set(self.results_['att_by_event_time']['event_time']).union(
             *[s.index for s in loo_estimates['by_event_time']])))
         self._finalize_resampling_stats('jackknife', loo_estimates['by_event_time'], all_event_times,
@@ -656,22 +646,19 @@ class SNN:
 
     def _perform_bootstrap_inference(self, all_units, all_times, snn_params):
         """
-        Helper to run the block bootstrap (on units) resampling procedure.
-
-        This method creates bootstrap samples by drawing units with replacement,
-        re-estimates the ATT for each sample, and uses the distribution of these
-        estimates to calculate standard errors and confidence intervals.
+        Run block bootstrap (on units) resampling and compute statistics.
 
         Parameters
         ----------
-        all_units : np.ndarray
-            An array of all unique unit identifiers in the dataset.
+        all_units : numpy.ndarray
+            All unique unit identifiers.
         all_times : list
-            A sorted list of all unique time periods in the dataset.
+            Sorted list of unique time periods in the dataset.
         snn_params : dict
-            Parameters to pass to the internal SNN estimation function.
+            Parameters passed to the internal SNN estimation function.
         """
-        if len(all_units) == 0 or self.resamples < 2: return
+        if len(all_units) == 0 or self.resamples < 2:
+            return
 
         self.results_['overall_att']['method'] = 'bootstrap'
         self.results_['att_by_event_time']['method'] = 'bootstrap'
@@ -690,7 +677,8 @@ class SNN:
                 df_bs_rows.append(unit_data)
 
             df_bs = pd.concat(df_bs_rows, ignore_index=True) if df_bs_rows else pd.DataFrame()
-            if df_bs.empty: continue
+            if df_bs.empty:
+                continue
 
             # Temporarily switch to the temp unit column for estimation
             original_unit_col = self.unit_col
@@ -699,7 +687,7 @@ class SNN:
             _, overall_att_b, effects_etu_b = self._get_snn_results(df_bs, snn_params)
             bs_estimates['overall'].append(overall_att_b)
 
-            # Event time estimates
+            # Event-time estimates
             treatment_map_bs = self._get_treatment_start_times(df_bs, self.unit_col, self.time_col, self.treat_col)
             att_event_b = self._get_event_time_aggregates(effects_etu_b, df_bs, treatment_map_bs)
             bs_estimates['by_event_time'].append(
@@ -708,12 +696,12 @@ class SNN:
             # Revert unit column name
             self.unit_col = original_unit_col
 
-        # Calculate and store stats for overall ATT
+        # Overall ATT stats
         se, p, cil, ciu = self._calculate_bootstrap_stats(self.results_['overall_att']['estimate'],
                                                           bs_estimates['overall'], self.alpha)
         self.results_['overall_att'].update({'se': se, 'p_value': p, 'ci_lower': cil, 'ci_upper': ciu})
 
-        # Calculate and store stats for event-time ATT
+        # Event-time ATT stats
         all_event_times = sorted(list(set(self.results_['att_by_event_time']['event_time']).union(
             *[s.index for s in bs_estimates['by_event_time']])))
         self._finalize_resampling_stats('bootstrap', bs_estimates['by_event_time'], all_event_times,
@@ -721,27 +709,29 @@ class SNN:
 
     def _perform_placebo_inference(self, all_units, snn_params):
         """
-        Deterministic Fisher-style placebo inference when exactly one unit is treated.
+        Run deterministic Fisher-style placebo inference (single treated unit only).
 
-        Procedure:
-          1) Require exactly one treated unit in the original data.
-          2) Let t0 be the observed treatment start time of that unit.
-          3) For each unit (excluding the originally treated one), overwrite treatment so that
-             the chosen unit is 'treated' from t0 onward; all other units are set to control.
-          4) Re-estimate the overall ATT and event-time ATT for each such placebo.
-          5) Append the observed ATT and event-time path from the actual treated unit to the
-             placebo distributions without recomputing it.
-          6) Compute:
-             - Overall Fisher p-value: share of all ATT values (including observed) with
-               |ATT| >= |ATT_obs|.
-             - Per-event-time p-values: for each τ, share of all ATT_τ values (including observed)
-               with |ATT_τ| >= |ATT_obs,τ|.
+        Procedure
+        ---------
+        1) Require exactly one treated unit in the original data.
+        2) Let ``t0`` be that unit’s observed treatment start time.
+        3) For each other unit, reassign treatment so that the chosen unit is
+           “treated” from ``t0`` onward; everyone else is control.
+        4) Re-estimate overall and event-time ATTs for each placebo reassignment.
+        5) Append the observed ATT and event-time path to the distributions
+           (without recomputation).
+        6) Compute:
+           - Overall Fisher p-value: share of ATT values (incl. observed)
+             with ``|ATT| >= |ATT_obs|``.
+           - Per-event-time p-values: for each ``τ``, share of ``ATT_τ`` values
+             (incl. observed) with ``|ATT_τ| >= |ATT_obs,τ|``.
 
-        Populates:
-          - self.placebo_dist_            : np.ndarray of overall ATT values
-          - self.placebo_event_dist_      : list of pd.Series (event-time paths)
-          - self.results_['overall_att']  : adds 'placebo_p' and 'placebo_rank'
-          - self.results_['att_by_event_time']['placebo_p'] : per-period p-values
+        Populates
+        ---------
+        - ``self.placebo_dist_`` : numpy.ndarray of overall ATT values
+        - ``self.placebo_event_dist_`` : list of pandas.Series (event-time paths)
+        - ``self.results_['overall_att']`` : adds ``'placebo_p'`` and ``'placebo_rank'``
+        - ``self.results_['att_by_event_time']['placebo_p']`` : per-period p-values
         """
         # Count "ever treated" units
         ever_treated_by_unit = self._df_proc.groupby(self.unit_col)[self.treat_col].max()
@@ -845,27 +835,24 @@ class SNN:
 
     def _finalize_resampling_stats(self, method, estimates_list, all_indices, results_key, index_col):
         """
-        Helper to compute and merge stats for by-time/by-event-time results.
-
-        This function takes a list of resampled time-series estimates (from
-        jackknife or bootstrap), computes statistics for each time point, and
-        merges them into the appropriate results DataFrame.
+        Compute and merge SE/CI/p-values for by-time or by-event-time results.
 
         Parameters
         ----------
-        method : {'jackknife', 'bootstrap'}
-            The resampling method used.
-        estimates_list : list of pd.Series
-            A list where each element is a Series of estimates from one
-            resampling draw, indexed by time or event_time.
+        method : {"jackknife", "bootstrap"}
+            Resampling method used.
+        estimates_list : list[pandas.Series]
+            Each element is a Series of estimates from a single resample,
+            indexed by time or event time.
         all_indices : list
-            A list of all possible time/event_time indices across all draws.
+            Union of indices (time/event_time) across all resamples.
         results_key : str
-            The key in `self.results_` to update (e.g., 'att_by_time').
+            Key in ``self.results_`` to update (e.g., ``"att_by_event_time"``).
         index_col : str
-            The name of the index column (e.g., 'Time' or 'event_time').
+            Name of the index column (e.g., ``"Time"`` or ``"event_time"``).
         """
-        if not estimates_list: return
+        if not estimates_list:
+            return
 
         reindexed_series = [s.reindex(all_indices, fill_value=np.nan) for s in estimates_list]
         resampling_df = pd.concat(reindexed_series, axis=1).T
@@ -904,57 +891,54 @@ class SNN:
              placebo_opacity: float = 0.25,
              vertical_line_color: str = "#E71D36") -> go.Figure:
         """
-        Generates plots to visualize the estimation results.
+        Generate diagnostic plots of estimation results.
 
-        This method can create two types of plots, both based on event time:
-        1. `plot_type="gap"`: Shows the ATT series (the "gap" plot).
-        2. `plot_type="counterfactual"`: Shows the observed vs. counterfactual
-           outcome paths for the treated group.
+        Two plot types (both default to event time on the x-axis):
 
-        If treatment adoption is simultaneous, the `calendar_time` option can be
-        used to display the x-axis in calendar time units instead of relative
-        event time, which can be more intuitive.
+        - ``plot_type="gap"``: ATT series (the “gap” plot).
+        - ``plot_type="counterfactual"``: Observed vs. counterfactual outcome
+          paths for treated units.
+
+        If treatment adoption is simultaneous across units, setting
+        ``calendar_time=True`` will display the x-axis in calendar time rather
+        than event time. For staggered adoption, this raises an error.
 
         Parameters
         ----------
         plot_type : {"gap", "counterfactual"}, default "gap"
-            The type of plot to generate.
+            Type of plot.
         calendar_time : bool, default False
-            If True, and if treatment adoption is simultaneous, the x-axis will
-            represent calendar time. If adoption is staggered, using this
-            option will raise an error.
+            Use calendar time on the x-axis (only allowed for simultaneous adoption).
         show_placebos : bool, default False
-            If True, the plot will include the placebo distribution as a shaded
-            area in the gap plot.
-        xrange : list or None, optional
-            A list of two numbers `[min, max]` to set the x-axis range.
+            Overlay placebo distribution lines in the gap plot (ignored for counterfactual plot).
+        xrange : tuple[int, int] or None, optional
+            ``(min, max)`` x-axis range filter.
         title : str or None, optional
-            The title for the plot. A default title is used if None.
+            Plot title; a sensible default is used if ``None``.
         xlabel : str or None, optional
-            The label for the x-axis. A default label is used if None.
+            X-axis label; a sensible default is used if ``None``.
         ylabel : str, default "Outcome"
-            The label for the primary y-axis.
+            Y-axis label (for gap, defaults to “ATT” internally).
         figsize : tuple, default (10, 6)
-            The figure size in (width, height), scaled by 100 for pixels.
+            Figure size in inches; internally scaled by 100 for pixels.
         color : str, default "#33658A"
-            The color for the primary line in the gap plot.
+            Line/marker color for the ATT in the gap plot.
         observed_color : str, default "#070707"
-            The color for the observed outcomes in the counterfactual plot.
+            Observed series color in the counterfactual plot.
         counterfactual_color : str, default "#33658A"
-            The color for the counterfactual outcomes in the counterfactual plot.
+            Counterfactual series color in the counterfactual plot.
         placebo_color : str, default "#999999"
-            The color for the placebo lines in the gap plot.
+            Placebo lines color (gap plot).
         placebo_opacity : float, default 0.25
-            The opacity for the placebo lines in the gap plot.
+            Placebo lines opacity (gap plot).
         vertical_line_color : str, default "#E71D36"
-            The color for the vertical line indicating treatment adoption.
+            Color for the vertical line marking treatment adoption.
 
         Returns
         -------
         plotly.graph_objects.Figure
-            The generated Plotly figure object, which is also displayed.
+            The generated figure.
         """
-
         if show_placebos and plot_type == "counterfactual":
             raise ValueError("show_placebos=True is not supported for counterfactual plots.")
 
@@ -1005,7 +989,7 @@ class SNN:
 
             if show_placebos and getattr(self, "placebo_event_dist_", []):
                 for s in self.placebo_event_dist_:
-                    if s.empty:  # nothing to draw
+                    if s.empty:
                         continue
                     fig.add_trace(go.Scatter(
                         x=s.index, y=s.values,
@@ -1031,7 +1015,7 @@ class SNN:
 
             fig.add_hline(y=0, line_dash="dash", line_width=1)
             if (xrange is not None and xrange[0] < 0 + self._common_start_time*calendar_time < xrange[1]) or xrange is None:
-                    fig.add_vline(x=vline_x, line_dash="dot", line_color=vertical_line_color, line_width=1)
+                fig.add_vline(x=vline_x, line_dash="dot", line_color=vertical_line_color, line_width=1)
 
             fig.update_layout(
                 template="plotly_white",
@@ -1043,7 +1027,7 @@ class SNN:
                 margin=dict(l=60, r=40, t=80, b=80)
             )
 
-            # auto‐pad y‐axis to full CI range
+            # Auto-pad y-axis to full CI range
             if {'ci_lower', 'ci_upper'}.issubset(df.columns):
                 ci_only = df.dropna(subset=['ci_lower', 'ci_upper'])
                 if not ci_only.empty:
@@ -1064,7 +1048,7 @@ class SNN:
             if calendar_time:
                 df[x_axis_col] = df['event_time'] + self._common_start_time
 
-            # bring in att CI to translate into cf CI
+            # Bring in ATT CI to translate into counterfactual CI
             ci_data = self.att_by_event_time_[['event_time', 'att', 'ci_lower', 'ci_upper']]
             df = df.merge(ci_data, on='event_time', how='left')
             df['cf_lower'] = df['counterfactual'] - (df['ci_upper'] - df['att'])
@@ -1075,7 +1059,7 @@ class SNN:
 
             fig = go.Figure()
 
-            # cf CI band
+            # Counterfactual CI band
             band = df.dropna(subset=['cf_lower', 'cf_upper'])
             if not band.empty:
                 fig.add_trace(go.Scatter(
@@ -1087,7 +1071,7 @@ class SNN:
                     hoverinfo="skip"
                 ))
 
-            # observed & counterfactual lines
+            # Observed & counterfactual lines
             fig.add_trace(go.Scatter(
                 x=df[x_axis_col], y=df['observed'],
                 mode="lines", name="Observed",
@@ -1099,7 +1083,7 @@ class SNN:
                 line=dict(color=counterfactual_color, width=2, dash="dash")
             ))
             if (xrange is not None and xrange[0] < 0 + self._common_start_time*calendar_time < xrange[1]) or xrange is None:
-                    fig.add_vline(x=vline_x, line_dash="dot", line_color=vertical_line_color, line_width=1)
+                fig.add_vline(x=vline_x, line_dash="dot", line_color=vertical_line_color, line_width=1)
 
             fig.update_layout(
                 template="plotly_white",
@@ -1111,7 +1095,7 @@ class SNN:
                 margin=dict(l=60, r=40, t=80, b=80)
             )
 
-            # pad y‐axis to include both cf and observed ranges
+            # Pad y-axis to include both CF and observed ranges
             non_na = df.dropna(subset=['cf_lower', 'cf_upper', 'observed', 'counterfactual'])
             if not non_na.empty:
                 ymin = min(non_na['cf_lower'].min(), non_na['observed'].min())
@@ -1124,9 +1108,9 @@ class SNN:
 
         raise ValueError("`plot_type` must be one of 'gap' or 'counterfactual'.")
 
-    def summary(self):
+    def summary(self) -> None:
         """
-        Prints a formatted summary of the estimation results to the console.
+        Print a formatted summary of the estimation results.
         """
         if self.results_ is None:
             raise RuntimeError("You must call the .fit() method before generating a summary.")
@@ -1159,7 +1143,7 @@ class SNN:
         print("\n--- Overall ATT ---")
         print(overall_summary_df.to_string(index=False))
 
-        # Placebo overall Fisher p-value line (kept for clarity)
+        # Placebo overall Fisher p-value line (for clarity)
         if self.placebo_se:
             res = self.results_['overall_att']
             p = res.get('placebo_p', np.nan)
@@ -1177,7 +1161,7 @@ class SNN:
             evt_df = evt_df[evt_df['event_time'] >= 0].copy()
 
         if self.placebo_se:
-            # Keep only relevant columns and pretty format
+            # Keep relevant columns and pretty format
             keep_cols = [c for c in ['event_time', 'att', 'N_units', 'placebo_p'] if c in evt_df.columns]
             evt_df = evt_df[keep_cols]
             num_cols = [c for c in ['att', 'placebo_p'] if c in evt_df.columns]

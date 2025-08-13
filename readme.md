@@ -66,7 +66,7 @@ df = (
     })
 )
 
-# Drop territories & aggregate rows (keep 50 states + DC)
+# Drop territories & aggregate rows (keep 50 states)
 bad_units = ["District of Columbia", "United States", "Guam",
              "Puerto Rico", "American Samoa", "Virgin Islands"]
 df = df[~df["Unit"].isin(bad_units)]
@@ -129,9 +129,9 @@ model_pc.plot(show_placebos=True,
               xlabel="Event Time (0 = 1989)",
               ylabel="ATT (packs per capita)").write_image("placebo.png")
 ```
-
+### Output
 <details>
-<summary><b>Click to expand output</b></summary>
+<summary>Click to expand</summary>
 
 ```plaintext
 ============================================================
@@ -220,7 +220,8 @@ Placebo Fisher p-value: 0.08  (rank 4/50)
 
 </details>
 
-**Plots**
+### Plots
+
 ![](https://github.com/rivkalipko/synthnn/blob/main/demos/gap.png?raw=true)
 ![](https://github.com/rivkalipko/synthnn/blob/main/demos/counterfactual.png?raw=true)
 ![](https://github.com/rivkalipko/synthnn/blob/main/demos/graphics.png?raw=true)
@@ -291,7 +292,7 @@ If you use this package in your research, you can cite it as below.
   author = {Lipkovitz, Rivka},
   month = jun,
   title = {{synthnn: a Python package for estimating treatment effects using Synthetic Nearest Neighbors}},
-  url = {[https://github.com/rivkalipko/synthnn](https://github.com/rivkalipko/synthnn)},
+  url = {https://github.com/rivkalipko/synthnn},
   year = {2025}
 }
 ```

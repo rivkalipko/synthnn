@@ -16,7 +16,7 @@ df = (
     })
 )
 
-# Drop territories & aggregate rows (keep 50 states + DC)
+# Drop territories & aggregate rows (keep 50 states)
 bad_units = ["District of Columbia", "United States", "Guam",
              "Puerto Rico", "American Samoa", "Virgin Islands"]
 df = df[~df["Unit"].isin(bad_units)]
