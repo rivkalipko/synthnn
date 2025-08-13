@@ -251,7 +251,7 @@ class SyntheticNearestNeighbors():
     def _isfeasible(self, train_error, subspace_inclusion_stat):
         """
 		check feasibility of prediction
-		True iff linear span + subspace inclusion tests both pass
+		True iff linear span + subspace inclusion demos both pass
 		"""
         # linear span test
         ls_feasible = True if train_error <= self.linear_span_eps else False

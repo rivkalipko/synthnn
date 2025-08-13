@@ -41,11 +41,13 @@ class SNN:
         Method for uncertainty quantification:
         - "jackknife" : Leave-one-unit-out resampling.
         - "bootstrap" : Block bootstrap on units (with replacement).
-        - "placebo"   : Fisher randomisation test (permutes treated labels).
+        - "placebo"   : Deterministic Fisher-style placebo test that requires exactly
+                        one treated unit. It simulates the observed treatment start
+                        time on each originally untreated unit (one at a time) to
+                        form the placebo distribution.
 
     resamples : int, default 500
-        Number of resamples or permutations used when `variance_type`
-        requires them (i.e., for "bootstrap" or "placebo").
+        Number of resamples used when `variance_type = "bootstrap"`.
 
     alpha : float, default 0.05
         Significance level for confidence intervals and two-sided p-values.
@@ -137,6 +139,7 @@ class SNN:
         self.counterfactual_df_ = None
         self.counterfactual_event_df_ = None
         self.placebo_dist_ = None
+        self.placebo_event_dist_ = []
         self._df_proc = None
         self._full_data_treatment_start_map = None
         self._df_effects_all_ = None
@@ -461,25 +464,6 @@ class SNN:
     def fit(self, df: pd.DataFrame):
         """
         Fit the SNN model to the provided panel data.
-
-        This method is the main entry point for the analysis. It performs data
-        validation, runs the core SNN estimation on the full dataset, calculates
-        the overall ATT, by-time ATT, and by-event-time ATT. It then
-        optionally computes standard errors and confidence intervals via the
-        resampling method specified during initialization.
-
-        Parameters
-        ----------
-        df : pd.DataFrame
-            A DataFrame in long format containing the panel data. It must include
-            the columns specified in the constructor (`unit_col`, `time_col`,
-            `outcome_col`, `treat_col`).
-
-        Returns
-        -------
-        SNN
-            The fitted SNN object, allowing for method chaining
-            (e.g., `model.fit(df).plot(...)`).
         """
         # --- 1. Data Validation and Preparation ---
         if not isinstance(df, pd.DataFrame):
@@ -511,12 +495,14 @@ class SNN:
 
         all_unique_units = df_proc[self.unit_col].unique()
         all_time_periods = sorted(df_proc[self.time_col].unique())
-        self._full_data_treatment_start_map = self._get_treatment_start_times(df_proc, self.unit_col, self.time_col,
-                                                                              self.treat_col)
+        self._full_data_treatment_start_map = self._get_treatment_start_times(
+            df_proc, self.unit_col, self.time_col, self.treat_col
+        )
         uniq_starts = self._full_data_treatment_start_map.unique()
         self._common_start_time = uniq_starts[0] if len(uniq_starts) == 1 else None
         treated_units = df_proc[df_proc[self.treat_col] == 1][self.unit_col].unique()
 
+        # Build counterfactual paths
         cf_df = (
             self._df_effects_all_[self._df_effects_all_[self.unit_col].isin(treated_units)]
             .groupby(self.time_col)
@@ -527,24 +513,12 @@ class SNN:
         )
         self.counterfactual_df_ = cf_df
 
+        # Event-time counterfactual paths for plotting
         if len(treated_units):
-            df_evt = (
-                self._df_effects_all_[self._df_effects_all_[self.unit_col]
-                .isin(treated_units)].copy()
-            )
-
-            # add each unit’s treatment start time
-            df_evt = df_evt.merge(self._full_data_treatment_start_map,
-                                  left_on=self.unit_col,
-                                  right_index=True,
-                                  how="left")  # col name: 'treatment_start_time'
-
-            # event time τ = calendar time − first-treat time
-            df_evt['event_time'] = (
-                    df_evt[self.time_col] - df_evt['treatment_start_time']
-            )
-
-            # average across units for every τ
+            df_evt = self._df_effects_all_[self._df_effects_all_[self.unit_col].isin(treated_units)].copy()
+            df_evt = df_evt.merge(self._full_data_treatment_start_map, left_on=self.unit_col, right_index=True,
+                                  how="left")
+            df_evt['event_time'] = df_evt[self.time_col] - df_evt['treatment_start_time']
             cf_evt_df = (
                 df_evt.groupby('event_time')
                 .agg(observed=('actual', 'mean'),
@@ -555,12 +529,10 @@ class SNN:
                 .reset_index(drop=True)
             )
         else:
-            cf_evt_df = pd.DataFrame(columns=['event_time',
-                                              'observed', 'counterfactual', 'N_units'])
-
+            cf_evt_df = pd.DataFrame(columns=['event_time', 'observed', 'counterfactual', 'N_units'])
         self.counterfactual_event_df_ = cf_evt_df
 
-        # Aggregate by calendar time
+        # Aggregate by calendar time (ATT)
         att_by_time_full_df = pd.DataFrame({self.time_col: all_time_periods})
         if not effects_etu_full_df.empty and effects_etu_full_df['effect'].notna().any():
             calendar_time_agg = effects_etu_full_df.groupby(self.time_col).agg(
@@ -570,7 +542,7 @@ class SNN:
         att_by_time_full_df.fillna({'att': np.nan, 'N_units': 0}, inplace=True)
         att_by_time_full_df['N_units'] = att_by_time_full_df['N_units'].astype(int)
 
-        # Aggregate by event time
+        # Aggregate by event time (ATT)
         att_by_event_time_full_df = self._get_event_time_aggregates(
             effects_etu_full_df, df_proc, self._full_data_treatment_start_map
         )
@@ -582,11 +554,14 @@ class SNN:
             'att_by_event_time': att_by_event_time_full_df.copy(),
             'individual_effects': individual_effects_full
         }
+
+        # Default add inference placeholders; we may strip for placebo later
         for key in ['overall_att', 'att_by_time', 'att_by_event_time']:
             if isinstance(self.results_[key], dict):
                 self.results_[key].update({'se': np.nan, 'p_value': np.nan, 'ci_lower': np.nan, 'ci_upper': np.nan})
             else:
-                for col in ['se', 'p_value', 'ci_lower', 'ci_upper']: self.results_[key][col] = np.nan
+                for col in ['se', 'p_value', 'ci_lower', 'ci_upper']:
+                    self.results_[key][col] = np.nan
                 self.results_[key]['method'] = 'none'
 
         # --- 4. Resampling for Standard Errors (if requested) ---
@@ -597,8 +572,31 @@ class SNN:
             self._perform_jackknife_inference(all_unique_units, all_time_periods, resampling_snn_params)
         elif self.bootstrap_se:
             self._perform_bootstrap_inference(all_unique_units, all_time_periods, resampling_snn_params)
+
         if self.placebo_se:
+            # Early guard: require exactly one treated unit
+            ever_treated_by_unit = df_proc.groupby(self.unit_col)[self.treat_col].max()
+            if int(ever_treated_by_unit.sum()) != 1:
+                raise ValueError("variance_type='placebo' requires exactly one treated unit in the data.")
             self._perform_placebo_inference(all_unique_units, resampling_snn_params)
+
+            # Strip irrelevant SE/CI/normal p-value fields for placebo outputs
+            # Overall
+            self.results_['overall_att'] = {
+                'estimate': self.results_['overall_att']['estimate'],
+                'method': 'placebo',
+                'placebo_p': self.results_['overall_att'].get('placebo_p', np.nan),
+                'placebo_rank': self.results_['overall_att'].get('placebo_rank', np.nan)
+            }
+            # Event time: keep only event_time/att/N_units + placebo_p
+            evt = self.results_['att_by_event_time']
+            keep_evt_cols = [c for c in ['event_time', 'att', 'N_units', 'placebo_p'] if c in evt.columns]
+            self.results_['att_by_event_time'] = evt[keep_evt_cols].copy()
+            # Calendar-time table is not used for placebo inference; leave as-is or strip the SE/CI columns
+            if isinstance(self.results_['att_by_time'], pd.DataFrame):
+                drop_cols = [c for c in ['se', 'p_value', 'ci_lower', 'ci_upper', 'method'] if
+                             c in self.results_['att_by_time'].columns]
+                self.results_['att_by_time'].drop(columns=drop_cols, inplace=True, errors='ignore')
 
         # --- 5. Finalize and Store Attributes ---
         self.overall_att_ = pd.DataFrame([self.results_['overall_att']])
@@ -723,58 +721,127 @@ class SNN:
 
     def _perform_placebo_inference(self, all_units, snn_params):
         """
-        Performs a Fisher-style randomisation test for placebo inference.
+        Deterministic Fisher-style placebo inference when exactly one unit is treated.
 
-        This procedure works by:
-        1. Randomly re-assigning the "treated" label to the same number of
-           units as were originally treated.
-        2. Re-computing the overall ATT for this placebo assignment.
-        3. Repeating this process `self.resamples` times to build a distribution
-           of placebo ATTs.
-        The p-value is then the share of placebo ATTs whose absolute values are
-        greater than or equal to the absolute value of the observed ATT.
+        Procedure:
+          1) Require exactly one treated unit in the original data.
+          2) Let t0 be the observed treatment start time of that unit.
+          3) For each unit (excluding the originally treated one), overwrite treatment so that
+             the chosen unit is 'treated' from t0 onward; all other units are set to control.
+          4) Re-estimate the overall ATT and event-time ATT for each such placebo.
+          5) Append the observed ATT and event-time path from the actual treated unit to the
+             placebo distributions without recomputing it.
+          6) Compute:
+             - Overall Fisher p-value: share of all ATT values (including observed) with
+               |ATT| >= |ATT_obs|.
+             - Per-event-time p-values: for each τ, share of all ATT_τ values (including observed)
+               with |ATT_τ| >= |ATT_obs,τ|.
 
-        This method populates `self.placebo_dist_` and adds 'placebo_p' and
-        'placebo_rank' to `self.results_['overall_att']`.
-
-        Parameters
-        ----------
-        all_units : np.ndarray
-            An array of all unique unit identifiers in the dataset.
-        snn_params : dict
-            Parameters to pass to the internal SNN estimation function.
+        Populates:
+          - self.placebo_dist_            : np.ndarray of overall ATT values
+          - self.placebo_event_dist_      : list of pd.Series (event-time paths)
+          - self.results_['overall_att']  : adds 'placebo_p' and 'placebo_rank'
+          - self.results_['att_by_event_time']['placebo_p'] : per-period p-values
         """
-        n_treated_original = (self._df_proc.groupby(self.unit_col)[self.treat_col]
-                              .max()).sum()  # ever treated count
-        if n_treated_original == 0 or self.resamples < 2:
-            return
+        # Count "ever treated" units
+        ever_treated_by_unit = self._df_proc.groupby(self.unit_col)[self.treat_col].max()
+        n_treated_original = int(ever_treated_by_unit.sum())
+
+        # Enforce exactly one treated unit
+        if n_treated_original != 1:
+            raise ValueError(
+                f"variance_type='placebo' requires exactly one treated unit, but found {n_treated_original}."
+            )
+
+        # Identify the single treated unit and its start time
+        starts = self._full_data_treatment_start_map
+        if starts is None or starts.empty or len(starts) != 1:
+            raise ValueError(
+                "Could not determine a unique treatment start time for the single treated unit."
+            )
+        treated_unit = starts.index[0]
+        t0 = starts.iloc[0]
+
+        # Prepare list of placebo units (exclude the original treated unit)
+        unit_ids = np.array(list(all_units))
+        placebo_units = [u for u in unit_ids if u != treated_unit]
 
         placebo_atts = []
-        unit_ids = np.array(list(all_units))
+        placebo_evt_series = []
 
-        for _ in range(self.resamples):
-            placebo_units = np.random.choice(unit_ids,
-                                             size=int(n_treated_original),
-                                             replace=False)
+        # Run placebo reassignments for each placebo unit
+        for u in placebo_units:
             df_perm = self._df_proc.copy()
+            # All control by default
             df_perm[self.treat_col] = 0
-            df_perm.loc[df_perm[self.unit_col].isin(placebo_units),
-            self.treat_col] = 1
+            # Placebo treatment for unit u from t0 forward
+            df_perm.loc[
+                (df_perm[self.unit_col] == u) & (df_perm[self.time_col] >= t0),
+                self.treat_col
+            ] = 1
 
-            _, att_perm, _ = self._get_snn_results(df_perm, snn_params)
+            # Re-estimate outcomes and compute placebo ATT + event-time path
+            _, att_perm, effects_etu_perm = self._get_snn_results(df_perm, snn_params)
             placebo_atts.append(att_perm)
 
-        self.placebo_dist_ = np.array([p for p in placebo_atts if pd.notna(p)], dtype=float)
+            placebo_start_map = self._get_treatment_start_times(
+                df_perm, self.unit_col, self.time_col, self.treat_col
+            )
+            evt = self._get_event_time_aggregates(effects_etu_perm, df_perm, placebo_start_map)
+            placebo_evt_series.append(evt.set_index('event_time')['att'])
 
+        # Append the observed configuration to the distributions (no recomputation)
         obs_att = self.results_['overall_att']['estimate']
+        obs_evt_df = self.results_.get('att_by_event_time', pd.DataFrame())
+        obs_evt_series = (obs_evt_df.set_index('event_time')['att']
+                          if not obs_evt_df.empty and 'att' in obs_evt_df.columns else pd.Series(dtype=float))
+
+        # Overall distribution
+        dist = np.array([p for p in placebo_atts if pd.notna(p) and np.isfinite(p)], dtype=float)
+        if pd.notna(obs_att) and np.isfinite(obs_att):
+            dist = np.append(dist, obs_att)
+        self.placebo_dist_ = dist
+
+        # Event-time distribution
+        self.placebo_event_dist_ = placebo_evt_series + ([obs_evt_series] if not obs_evt_series.empty else [])
+
+        # Overall Fisher-style p-value and rank
         if np.isnan(obs_att) or len(self.placebo_dist_) == 0:
-            p_val, rank = np.nan, np.nan
+            p_val_overall, rank = np.nan, np.nan
         else:
-            p_val = np.mean(np.abs(self.placebo_dist_) >= abs(obs_att))
+            p_val_overall = float(np.mean(np.abs(self.placebo_dist_) >= abs(obs_att)))
             rank = 1 + np.sum(np.abs(self.placebo_dist_) > abs(obs_att))
 
-        self.results_['overall_att']['placebo_p'] = p_val
+        self.results_['overall_att']['placebo_p'] = p_val_overall
         self.results_['overall_att']['placebo_rank'] = rank
+
+        # Per-event-time p-values
+        if not obs_evt_df.empty and self.placebo_event_dist_:
+            # Collect event-time values into a DataFrame
+            placebo_evt_df = pd.concat(
+                [s.rename(i) for i, s in enumerate(self.placebo_event_dist_)],
+                axis=1
+            )
+            placebo_evt_df.index.name = 'event_time'
+
+            per_period_p = []
+            for _, row in obs_evt_df.iterrows():
+                tau = row['event_time']
+                if tau in placebo_evt_df.index:
+                    dist_tau = placebo_evt_df.loc[tau].dropna().values
+                    if dist_tau.size:
+                        p_tau = float(np.mean(np.abs(dist_tau) >= abs(row['att'])))
+                    else:
+                        p_tau = np.nan
+                else:
+                    p_tau = np.nan
+                per_period_p.append(p_tau)
+
+            # Keep only relevant columns and attach p-values
+            keep_cols = [c for c in ['event_time', 'att', 'N_units'] if c in obs_evt_df.columns]
+            obs_evt_df = obs_evt_df[keep_cols].copy()
+            obs_evt_df['placebo_p'] = per_period_p
+            self.results_['att_by_event_time'] = obs_evt_df
 
     def _finalize_resampling_stats(self, method, estimates_list, all_indices, results_key, index_col):
         """
@@ -824,6 +891,7 @@ class SNN:
     def plot(self,
              plot_type: str = "gap",
              calendar_time: bool = False,
+             show_placebos: bool = False,
              xrange: tuple | None = None,
              title: str | None = None,
              xlabel: str | None = None,
@@ -832,6 +900,8 @@ class SNN:
              color: str = "#33658A",
              observed_color: str = "#070707",
              counterfactual_color: str = "#33658A",
+             placebo_color: str = "#999999",
+             placebo_opacity: float = 0.25,
              vertical_line_color: str = "#E71D36") -> go.Figure:
         """
         Generates plots to visualize the estimation results.
@@ -853,6 +923,9 @@ class SNN:
             If True, and if treatment adoption is simultaneous, the x-axis will
             represent calendar time. If adoption is staggered, using this
             option will raise an error.
+        show_placebos : bool, default False
+            If True, the plot will include the placebo distribution as a shaded
+            area in the gap plot.
         xrange : list or None, optional
             A list of two numbers `[min, max]` to set the x-axis range.
         title : str or None, optional
@@ -869,6 +942,10 @@ class SNN:
             The color for the observed outcomes in the counterfactual plot.
         counterfactual_color : str, default "#33658A"
             The color for the counterfactual outcomes in the counterfactual plot.
+        placebo_color : str, default "#999999"
+            The color for the placebo lines in the gap plot.
+        placebo_opacity : float, default 0.25
+            The opacity for the placebo lines in the gap plot.
         vertical_line_color : str, default "#E71D36"
             The color for the vertical line indicating treatment adoption.
 
@@ -877,6 +954,9 @@ class SNN:
         plotly.graph_objects.Figure
             The generated Plotly figure object, which is also displayed.
         """
+
+        if show_placebos and plot_type == "counterfactual":
+            raise ValueError("show_placebos=True is not supported for counterfactual plots.")
 
         # helper for CI fill
         def _hex_to_rgba(hx: str, alpha: float):
@@ -922,6 +1002,19 @@ class SNN:
                 marker=dict(size=7, color=color),
                 hovertemplate=f"{hover_prefix}=%{{x}}: %{{y:.3f}}<extra></extra>"
             ))
+
+            if show_placebos and getattr(self, "placebo_event_dist_", []):
+                for s in self.placebo_event_dist_:
+                    if s.empty:  # nothing to draw
+                        continue
+                    fig.add_trace(go.Scatter(
+                        x=s.index, y=s.values,
+                        mode="lines",
+                        line=dict(color=placebo_color, width=1),
+                        opacity=placebo_opacity,
+                        hoverinfo="skip",
+                        showlegend=False
+                    ))
 
             # CI band
             if {'ci_lower', 'ci_upper'}.issubset(df.columns):
@@ -1034,11 +1127,6 @@ class SNN:
     def summary(self):
         """
         Prints a formatted summary of the estimation results to the console.
-
-        The summary includes the overall ATT with inference statistics, and a
-        table of the ATT by event time for post-treatment periods (τ >= 0).
-        If placebo inference was performed, it also includes the Fisher p-value
-        and rank.
         """
         if self.results_ is None:
             raise RuntimeError("You must call the .fit() method before generating a summary.")
@@ -1047,31 +1135,61 @@ class SNN:
         print("SNN Estimation Results")
         print("=" * 60)
 
-        # Format the overall ATT dataframe for printing
-        overall_summary_df = self.overall_att_.copy()
-        float_cols = overall_summary_df.select_dtypes(include=np.number).columns
-        overall_summary_df[float_cols] = overall_summary_df[float_cols].map(lambda x: f'{x:.4g}' if pd.notna(x) else 'nan')
-        if 'placebo_rank' in overall_summary_df.columns:
-            overall_summary_df['placebo_rank'] = self.overall_att_['placebo_rank'].apply(lambda x: str(int(x)) if pd.notna(x) else 'nan')
+        # -------- Overall ATT --------
+        if self.placebo_se:
+            # Only the relevant placebo fields
+            overall_summary_df = pd.DataFrame([{
+                'estimate': self.overall_att_.iloc[0]['estimate'],
+                'placebo_p': self.overall_att_.iloc[0].get('placebo_p', np.nan),
+                'placebo_rank': self.overall_att_.iloc[0].get('placebo_rank', np.nan),
+            }])
+            # Pretty format
+            for col in ['estimate', 'placebo_p']:
+                overall_summary_df[col] = overall_summary_df[col].map(lambda x: f'{x:.4g}' if pd.notna(x) else 'nan')
+            if 'placebo_rank' in overall_summary_df.columns:
+                overall_summary_df['placebo_rank'] = overall_summary_df['placebo_rank'].apply(
+                    lambda x: str(int(x)) if pd.notna(x) else 'nan'
+                )
+        else:
+            overall_summary_df = self.overall_att_.copy()
+            float_cols = overall_summary_df.select_dtypes(include=np.number).columns
+            overall_summary_df[float_cols] = overall_summary_df[float_cols].map(
+                lambda x: f'{x:.4g}' if pd.notna(x) else 'nan')
 
         print("\n--- Overall ATT ---")
         print(overall_summary_df.to_string(index=False))
 
+        # Placebo overall Fisher p-value line (kept for clarity)
         if self.placebo_se:
             res = self.results_['overall_att']
             p = res.get('placebo_p', np.nan)
             rank = res.get('placebo_rank', np.nan)
-            m = len(self.placebo_dist_) if self.placebo_dist_ is not None else self.resamples
+            m = len(self.placebo_dist_) if self.placebo_dist_ is not None else np.nan
             print(f"\nPlacebo Fisher p-value: {p:.4g}  "
-                  f"(rank {int(rank) if pd.notna(rank) else 'N/A'}/{m})")
+                  f"(rank {int(rank) if pd.notna(rank) else 'N/A'}/{int(m) if pd.notna(m) else 'N/A'})")
 
+        # -------- Event-time table --------
         print("\n\n--- ATT by Event Time (Post-Treatment) ---\n")
-        event_time_summary = self.att_by_event_time_[self.att_by_event_time_['event_time'] >= 0].copy()
-        float_cols_evt = event_time_summary.select_dtypes(include=np.number).columns
-        event_time_summary[float_cols_evt] = event_time_summary[float_cols_evt].map(lambda x: f'{x:.4g}' if pd.notna(x) else 'nan')
-        if 'N_units' in event_time_summary.columns:
-            event_time_summary['N_units'] = self.att_by_event_time_['N_units'].astype(str)
+        evt_df = self.att_by_event_time_.copy()
 
-        print(event_time_summary.to_string(index=False))
+        # Only non-negative event times
+        if 'event_time' in evt_df.columns:
+            evt_df = evt_df[evt_df['event_time'] >= 0].copy()
 
+        if self.placebo_se:
+            # Keep only relevant columns and pretty format
+            keep_cols = [c for c in ['event_time', 'att', 'N_units', 'placebo_p'] if c in evt_df.columns]
+            evt_df = evt_df[keep_cols]
+            num_cols = [c for c in ['att', 'placebo_p'] if c in evt_df.columns]
+            for c in num_cols:
+                evt_df[c] = evt_df[c].map(lambda x: f'{x:.4g}' if pd.notna(x) else 'nan')
+            if 'N_units' in evt_df.columns:
+                evt_df['N_units'] = evt_df['N_units'].astype(str)
+        else:
+            float_cols_evt = evt_df.select_dtypes(include=np.number).columns
+            evt_df[float_cols_evt] = evt_df[float_cols_evt].map(lambda x: f'{x:.4g}' if pd.notna(x) else 'nan')
+            if 'N_units' in evt_df.columns:
+                evt_df['N_units'] = self.att_by_event_time_['N_units'].astype(str)
+
+        print(evt_df.to_string(index=False))
         print("\n" + "=" * 60)
